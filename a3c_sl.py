@@ -1,4 +1,6 @@
 # from env import Env
+import sys
+sys.path.insert(0, './build/Release')
 import env
 # from env_test import Env
 import card
@@ -84,8 +86,8 @@ def normalized_columns_initializer(std=1.0):
 class CardNetwork:
     def __init__(self, s_dim, trainer, scope, a_dim=9085):
         with tf.variable_scope(scope):
-            card_cnt = 57
-            self.temp = tf.placeholder(tf.float32, None, name="boltz")
+            #card_cnt = 57
+            #self.temp = tf.placeholder(tf.float32, None, name="boltz")
             self.input = tf.placeholder(tf.float32, [None, s_dim], name="input")
 
             # embedding layer
@@ -116,54 +118,60 @@ class CardNetwork:
             self.fc_flattened = slim.fully_connected(inputs=slim.flatten(self.fc_flattened), num_outputs=512, activation_fn=None)
 
             # self.fc1 = slim.fully_connected(inputs=self.fc_flattened, num_outputs=1024, activation_fn=tf.nn.sigmoid)
-            self.fc2 = slim.fully_connected(inputs=self.fc_flattened, num_outputs=8310, activation_fn=tf.nn.elu)
+            self.fc2 = slim.fully_connected(inputs=self.fc_flattened, num_outputs=9085, activation_fn=tf.nn.elu)
 
             # value
-            self.fc3 = slim.fully_connected(inputs=self.fc_flattened, num_outputs=64, activation_fn=tf.nn.elu)
-            self.fc4 = slim.fully_connected(inputs=self.fc3, 
-                    num_outputs=1, 
-                    activation_fn=None,
-                    weights_initializer=normalized_columns_initializer(1.0))
+            # self.fc3 = slim.fully_connected(inputs=self.fc_flattened, num_outputs=64, activation_fn=tf.nn.elu)
+            # self.fc4 = slim.fully_connected(inputs=self.fc3, 
+            #         num_outputs=1, 
+            #         activation_fn=None,
+            #         weights_initializer=normalized_columns_initializer(1.0))
 
             self.policy_pred = tf.reshape(self.fc2, [1, -1])
 
             self.mask = tf.placeholder(tf.bool, [None, a_dim], name='mask')
             self.mask = tf.reshape(self.mask, [1, -1])
             self.valid_policy = tf.boolean_mask(self.policy_pred[0], self.mask[0])
-            self.policy_norm = tf.norm(self.valid_policy)
-            self.a0 = self.valid_policy[0]
+            # self.policy_norm = tf.norm(self.valid_policy)
+            # self.a0 = self.valid_policy[0]
 
-            self.boltz_policy = tf.reshape(tf.nn.softmax(self.valid_policy / self.temp), [1, -1])
+            # self.boltz_policy = tf.reshape(tf.nn.softmax(self.valid_policy / self.temp), [1, -1])
             self.valid_policy = tf.nn.softmax(self.valid_policy)
             self.valid_policy = tf.reshape(self.valid_policy, [1, -1])
 
-            self.val_pred = tf.reshape(self.fc4, [-1])
+            self.masked_a_dim = tf.placeholder(tf.int32, None)
+            self.ground_truth_policy = tf.placeholder(tf.float32, [self.masked_a_dim], name='ground_truth')
+            self.cross_entropy = -tf.reduce_sum(ground_truth_policy * tf.log(self.valid_policy))
+
+            self.optimize = trainer.minimize(cross_entropy)
+
+            # self.val_pred = tf.reshape(self.fc4, [-1])
 
             # only support batch size one since masked_a_dim is changing
-            self.action = tf.placeholder(tf.int32, [None], "action_input")
+            # self.action = tf.placeholder(tf.int32, [None], "action_input")
             
-            self.masked_a_dim = tf.placeholder(tf.int32, None)
-            self.action_one_hot = tf.one_hot(self.action, self.masked_a_dim, dtype=tf.float32)
+            # self.masked_a_dim = tf.placeholder(tf.int32, None)
+            # self.action_one_hot = tf.one_hot(self.action, self.masked_a_dim, dtype=tf.float32)
 
-            self.val_truth = tf.placeholder(tf.float32, [None], "val_input")
-            self.advantages = tf.placeholder(tf.float32, [None], "advantage_input")
+            # self.val_truth = tf.placeholder(tf.float32, [None], "val_input")
+            # self.advantages = tf.placeholder(tf.float32, [None], "advantage_input")
 
-            self.pi_sample = tf.reduce_sum(tf.multiply(self.action_one_hot[0], self.valid_policy[0]))
-            self.pi = tf.cond(self.pi_sample > 0.99, lambda : self.pi_sample - 0.01, lambda : self.pi_sample)
-            self.pred_prob = self.pi
-            self.policy_loss = -tf.reduce_sum(tf.log(tf.clip_by_value(self.pi, 1e-8, 1.)) * self.advantages)
+            # self.pi_sample = tf.reduce_sum(tf.multiply(self.action_one_hot[0], self.valid_policy[0]))
+            # self.pi = tf.cond(self.pi_sample > 0.99, lambda : self.pi_sample - 0.01, lambda : self.pi_sample)
+            # self.pred_prob = self.pi
+            # self.policy_loss = -tf.reduce_sum(tf.log(tf.clip_by_value(self.pi, 1e-8, 1.)) * self.advantages)
 
-            self.val_loss = tf.reduce_sum(tf.square(self.val_pred-self.val_truth))
+            # self.val_loss = tf.reduce_sum(tf.square(self.val_pred-self.val_truth))
 
-            self.loss = 0.2 * self.val_loss + self.policy_loss
+            # self.loss = 0.2 * self.val_loss + self.policy_loss
 
-            local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope)
-            self.gradients = tf.gradients(self.loss, local_vars)
+            # local_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES, scope=scope)
+            # self.gradients = tf.gradients(self.loss, local_vars)
 
-            self.var_norms = tf.global_norm(local_vars)
-            self.gradients, self.grad_norms = tf.clip_by_global_norm(self.gradients, 1.0)
-            self.apply_grads = tf.cond(self.masked_a_dim > 1, lambda : trainer.apply_gradients(zip(self.gradients, local_vars)), 
-                lambda: tf.identity(tf.constant(False))) 
+            # self.var_norms = tf.global_norm(local_vars)
+            # self.gradients, self.grad_norms = tf.clip_by_global_norm(self.gradients, 1.0)
+            # self.apply_grads = tf.cond(self.masked_a_dim > 1, lambda : trainer.apply_gradients(zip(self.gradients, local_vars)), 
+            #     lambda: tf.identity(tf.constant(False))) 
 
 class CardAgent:
     def __init__(self, name, trainer):
@@ -722,7 +730,20 @@ def collect_data():
 
 #size of action space : 9085
 
+
+def read_data():
+    lines = f.readlines()
+    for i in range(0, N):
+        st = lines[i * 3].split()
+        X.append(st)
+        st = lines[i * 3 + 1].split()
+        Y.append(st)
+        st = lines[i * 3 + 2].split()
+        mask.append([eval(x) for x in st])
+
+
 if __name__ == '__main__':
+    '''
     demoGames = []
     read_seq3("seq")
     numOfDemos = len(demoGames)
@@ -730,17 +751,66 @@ if __name__ == '__main__':
     # print("hc : ", demoGames[1].handcards)
 
     N = 200000
-
-    X = []
-    Y = []
     f = open("data", "w")
     collect_data()
     f.close()
+    '''
+
+    X = []
+    Y = []
+    mask = []
+    f = open("data", "r")
+    read_data()
+    f.close()
+
+    Xval = X[:10000]
+    Yval = Y[:10000]
+    maskval = mask[:10000]
+    Xtr = X[10000:]
+    Ytr = Y[10000:]
+    masktr = mask[10000:]
+
+    SLNetwork = CardNetwork(54 * 6, tf.train.AdamOptimizer(learning_rate=0.001), "SLNetwork")
+
+    sess = tf.train.Session()
+
+    for i in range(190000):
+        maski = [False for j in range(9085)]
+        for idx in masktr[i]:
+            maski[idx] = True
+        sess.run(optimize,
+                feed_dict = {
+                    SLNetwork.input: np.reshape(Xtr[i], [1, -1]),
+                    SLNetwork.mask: np.reshape(maski, [1, -1]),
+                    SLNetwork.masked_a_dim: len(maski),
+                    SLNetwork.ground_truth_policy: Ytr[i]
+                })
+
+    total = 0
+    correct = 0
+    for i in range(10000):
+        maski = [False for j in range(9085)]
+        for idx in maskval[i]:
+            maski[idx] = True
+        valid_policy = sess.run(SLNetwork.valid_policy,
+                                feed_dict = {
+                                    SLNetwork.input: np.reshape(Xval[i], [1, -1]),
+                                    SLNetwork.mask: np.reshape(maski, [1, -1])
+                                })
+        valid_policy = valid_policy[0]
+        valid_actions = np.take(np.arange(9085), maski.nonzero())
+        valid_actions = valid_actions.reshape(-1)
+        a = np.random.choice(valid_actions, p=valid_policy)
+        total += 1
+        if (a == maskval[i][Yval[i].index(1)])
+            correct += 1
+
+    print("accurency = ", correct * 1.0 / total)
 
     # for i in range(200):
     #     print(demoGames[i].lordID)
 
-    #collect_data()
+    # collect_data()
 
     # print(len(demoGames))
     # print(demoGames[3333].handcards)
