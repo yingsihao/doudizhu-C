@@ -56,7 +56,7 @@ public:
     Env() {
         this->reset();
     };
-    Env::Env(const Env& e) {
+    Env(const Env& e) {
         indexID = e.indexID;
         clsGameSituation.reset(new GameSituation());
         *clsGameSituation = *e.clsGameSituation;

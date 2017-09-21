@@ -333,6 +333,7 @@ def read_seq3(filename):
         ind = lord_id
         while r == 0:
             a = struct.unpack('H', f.read(2))[0]
+            #print("a = ", a)
             put_list = action_space[a]
             # print(put_list)
             for c in put_list:
@@ -341,7 +342,10 @@ def read_seq3(filename):
             if (not handcards[0]) or (not handcards[1]) or (not handcards[2]):
                 r = struct.unpack('h', f.read(2))[0]
         episodes += 1
+        print(episodes)
 
+
+'''
 if __name__ == "__main__":
     naive_agent = NaiveAgent()
     random_agent = RandomAgent()
@@ -350,9 +354,18 @@ if __name__ == "__main__":
     # print(e.agent_cards)
     # print(e.oppo_cards)
     # print(naive_agent.respond(env))
-    write_seq3(100, 'seq')
+    write_seq3(100, 'seq2')
     # read_seq3('seq')
 
     # print(get_benchmark(['3', '3', '3', '3', '4', '4', '4', '4', '5', '5', '5', '5',
     #     '6', '6', '6', '6', '7', '7', '7', '7', '8', '8', '8', '8',
     #     '9', '9', '9', '9', '10', '10', '10', '10', 'J', 'J', 'J', 'J'], random_agent))
+'''
+if __name__ == "__main__":
+    read_seq3("seq")
+    '''
+    cnt = 0
+    for action in action_space:
+        print("action ", cnt , ":", action)
+        cnt += 1
+    '''

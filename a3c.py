@@ -2,6 +2,7 @@
 import env
 # from env_test import Env
 import card
+from card import action_space
 import os, random
 import tensorflow as tf
 import numpy as np
@@ -10,6 +11,9 @@ import tensorflow.contrib.rnn as rnn
 import time
 from env_test import get_benchmark
 from collections import Counter
+import struct
+import copy
+import random
 
 PASS_PENALTY = 5
 
@@ -351,6 +355,7 @@ class CardMaster:
                     valid_actions = np.take(np.arange(self.a_dim), mask.nonzero())
                     valid_actions = valid_actions.reshape(-1)
                     a = np.random.choice(valid_actions, p=policy)
+
                     
                     a_masked = np.where(valid_actions == a)[0]
 
@@ -462,7 +467,285 @@ def run_game(sess, network):
             s = s_prime
     print("lord winning rate: %f" % (lord_win_rate / 100.0))
 
+
+
+
+
+class DemoGame:
+    """docstring for ClassName"""
+
+    def __init__(self, _handcards, _extracards):
+        self.handcards = copy.deepcopy(_handcards)
+        self.extracards = copy.deepcopy(_extracards)
+        self.actions = []
+        self.reward = 0
+        self.lordID = -1
+
+    def add_action(self, a):
+        self.actions.append(a)
+
+    def set_reward(self, r):
+        self.reward = r
+
+    def set_lordID(self, id):
+        self.lordID = id
+
+
+def read_seq3(filename):
+    episodes = 0
+    f = open(filename, 'rb')
+
+    eof = False
+    while True:
+        cards = []
+        for i in range(54):
+            b = f.read(1)
+            if not b:
+                eof = True
+                break
+            c = str((struct.unpack('c', b)[0]).decode('ascii'))
+            
+            if c == '1':
+                c = '10'
+            cards.append(c)
+        
+        if eof:
+            break
+        lord_id = struct.unpack('H', f.read(2))[0]
+        # print(cards)
+
+        handcards = [cards[:17], cards[17:34], cards[34:51]]
+        extra_cards = cards[51:]
+        handcards[lord_id] += extra_cards
+
+        demo = DemoGame(handcards, extra_cards)
+        demo.set_lordID(lord_id)
+
+        r = 0
+        ind = lord_id
+        while r == 0:
+            a = struct.unpack('H', f.read(2))[0]
+            demo.add_action(a)
+            #print("a = ", a)
+            put_list = action_space[a]
+            # print(put_list)
+            for c in put_list:
+                handcards[ind].remove(c)
+            ind = int(ind + 1) % 3
+            if (not handcards[0]) or (not handcards[1]) or (not handcards[2]):
+                r = struct.unpack('h', f.read(2))[0]
+                demo.set_reward(r)
+
+        demoGames.append(demo)
+
+        # print(episodes)
+        episodes += 1
+        if episodes == 248491:
+            break
+
+def to_one_hot(v):
+    result = [0 for i in range(54)]
+
+    for color in v:
+        if color > 52:
+            color = 53
+        result[color] += 1;
+
+    return result
+
+def subtract(a, b):
+    c = []
+    for i in range(len(a)):
+        c.append(a[i] - b[i])
+    return c
+
+def to_color(ch):
+    ret = card.Card.cards.index(ch) * 4
+    if ret > 52:
+        ret = 53
+    return ret
+
+#e.g. [['3', '3', '4', '6'], ['*', '$']] to [[0, 1, 4, 12], [52, 53]]
+def to_color_handcards(ch):
+    handcards = [[] for i in range(3)]
+    mask = [False for i in range(54)]
+    for i in range(3):
+        for c in ch[i]:
+            color = to_color(c)
+            while mask[color]:
+                color += 1
+            mask[color] = True
+            handcards[i].append(color)
+    return handcards
+
+def to_card(color):
+    idx = 14 if color == 53 else int(color / 4)
+    return card.Card.cards[idx]
+
+def to_color_extracards(handcards, ch):
+    extracards = []
+    mask = [False for i in range(54)]
+    for i in range(3):
+        for color in handcards:
+            if to_card(color) == ch[i] and (not mask[color]):
+                mask[color] = True
+                extracards.append(color)
+                break
+    return extracards
+
+def to_color_putlist(action, handcards):
+    putlist = []
+    mask = [False for i in range(54)]
+    for a in action:
+        for color in handcards:
+            if to_card(color) == a and (not mask[color]):
+                mask[color] = True
+                putlist.append(color)
+                break
+    return putlist
+
+def printf(l):
+    s = ""
+    for e in l:
+        if e == 0:
+            s = s + "0 "
+        else:
+            s = s + "1 "
+    s = s + '\n'
+    f.write(s)
+
+
+def collect_data():
+    cnt = 0
+
+    action_space = card.get_action_space()
+
+    # print(action_space)
+    # print("a : ", len(action_space))
+
+    while cnt < N:
+        gameID = random.randint(0, N - 1)
+        demoGame = demoGames[gameID]
+
+        lordID = demoGame.lordID
+        gameLen = len(demoGame.actions)
+
+        # while True:
+        th = random.randint(0, gameLen - 1)
+            # if not(th % 3 == lordID):
+            #     break
+
+        # if actions[th] == 0:
+        #     continue
+        handcards = to_color_handcards(demoGame.handcards)
+        # print("demo handcards", demoGame.handcards)
+        # print("hand ", handcards)
+        # print("lord ", lordID)
+        extracards = to_color_extracards(handcards[lordID], demoGame.extracards)
+        # print("demo extracards", demoGame.extracards)
+        # print("hand ", extracards)
+        # print("demo actions", demoGame.actions)
+        acts = [action_space[a] for a in demoGame.actions]
+        # print("demo actions", acts)
+        # print("th = ", th)
+
+        outCardList = [[] for i in range(3)]
+
+        ind = lordID
+        last_cards = []
+        last_ID = lordID
+        for i in range(th):
+            put_list = to_color_putlist(action_space[demoGame.actions[i]], handcards[ind])
+            if not(put_list == []):
+                last_cards = copy.deepcopy(put_list)
+                last_ID = ind
+            outCardList[ind] += put_list
+            # print(put_list)
+            for c in put_list:
+                handcards[ind].remove(c)
+            ind = int(ind + 1) % 3
+
+        if (last_ID == (th + lordID) % 3):
+            last_cards = []
+        # print("last cards ", last_cards, [to_card(x) for x in last_cards])
+
+        state = []
+        total = [1 for i in range(54)]
+
+        # print(handcards[th % 3])
+        self_cards = to_one_hot(handcards[(th + lordID) % 3])
+        remains = subtract(total, self_cards);
+
+        history = [to_one_hot(outCardList[i]) for i in range(3)]
+        # for i in range(3):
+        #     print("out card ", i, outCardList[i], [to_card(x) for x in outCardList[i]])
+        # print("history ", history)
+
+        for i in range(3):
+            remains = subtract(remains, history[i])
+
+        extra_cards = to_one_hot(extracards)
+
+        state += self_cards;
+        state += remains;
+        state += history[0];
+        state += history[1];
+        state += history[2];
+        state += extra_cards;
+
+        # numOfFeasibleActs = 0
+        # print("feasible actions : ")
+        action = []
+        mask = get_mask([to_card(color) for color in handcards[(th + lordID) % 3]], action_space, [to_card(color) for color in last_cards])
+        for a in range(len(action_space)):
+            if mask[a]:
+                if a == demoGame.actions[th]:
+                    action.append(1)
+                else:
+                    action.append(0)
+        #         print(action_space[a])
+        #         numOfFeasibleActs += 1
+        # print("num of fea : ", numOfFeasibleActs)
+
+
+        # X.append(state)
+        # Y.append(action)
+
+        printf(state)
+        printf(action)
+
+        # print("state ", cnt, " ", [(i % 54, state[i]) for i in range(54 * 6)])
+        # print("action ", cnt, " ", action, len(action))
+        return
+
+        cnt += 1
+
+#size of action space : 9085
+
 if __name__ == '__main__':
+    demoGames = []
+    read_seq3("seq")
+    numOfDemos = len(demoGames)
+
+    # print("hc : ", demoGames[1].handcards)
+
+    N = 200000
+
+    X = []
+    Y = []
+    f = open("data", "w")
+    collect_data()
+    f.close()
+
+    # for i in range(200):
+    #     print(demoGames[i].lordID)
+
+    #collect_data()
+
+    # print(len(demoGames))
+    # print(demoGames[3333].handcards)
+    # print(demoGames[3333].actions)
+    # print(demoGames[3333].reward)
     # trainer = tf.train.AdamOptimizer()
     # network = CardNetwork(54 * 6, trainer, "test", 8310)
     # summary_writer = tf.summary.FileWriter("agent_test")
@@ -497,7 +780,7 @@ if __name__ == '__main__':
     #             summary_writer.flush()
     #             losses = []
 
-    
+    '''
     load_model = False
     model_path = './model'
     cardgame = env.Env()
@@ -515,3 +798,4 @@ if __name__ == '__main__':
             master.run(sess, saver, 2000, cards)
         print(get_benchmark(cards, master))
         sess.close()
+    '''
