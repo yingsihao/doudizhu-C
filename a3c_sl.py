@@ -140,10 +140,11 @@ class CardNetwork:
             self.valid_policy = tf.reshape(self.valid_policy, [1, -1])
 
             self.masked_a_dim = tf.placeholder(tf.int32, None)
-            self.ground_truth_policy = tf.placeholder(tf.float32, [self.masked_a_dim], name='ground_truth')
-            self.cross_entropy = -tf.reduce_sum(ground_truth_policy * tf.log(self.valid_policy))
+            self.ground_truth_policy = tf.placeholder(tf.float32, [None], name='ground_truth')
+            self.ground_truth_policy = tf.reshape(self.ground_truth_policy, [-1, self.masked_a_dim])
+            self.cross_entropy = -tf.reduce_sum(self.ground_truth_policy * tf.log(self.valid_policy))
 
-            self.optimize = trainer.minimize(cross_entropy)
+            self.optimize = trainer.minimize(self.cross_entropy)
 
             # self.val_pred = tf.reshape(self.fc4, [-1])
 
@@ -653,7 +654,7 @@ def collect_data():
         # print("demo extracards", demoGame.extracards)
         # print("hand ", extracards)
         # print("demo actions", demoGame.actions)
-        acts = [action_space[a] for a in demoGame.actions]
+        # acts = [action_space[a] for a in demoGame.actions]
         # print("demo actions", acts)
         # print("th = ", th)
 
@@ -724,7 +725,6 @@ def collect_data():
 
         # print("state ", cnt, " ", [(i % 54, state[i]) for i in range(54 * 6)])
         # print("action ", cnt, " ", action, len(action))
-        return
 
         cnt += 1
 
@@ -735,11 +735,13 @@ def read_data():
     lines = f.readlines()
     for i in range(0, N):
         st = lines[i * 3].split()
-        X.append(st)
+        X.append([eval(x) for x in st])
         st = lines[i * 3 + 1].split()
-        Y.append(st)
+        Y.append([eval(x) for x in st])
         st = lines[i * 3 + 2].split()
         mask.append([eval(x) for x in st])
+        if i % 1000 == 0:
+            print(i)
 
 
 if __name__ == '__main__':
@@ -756,39 +758,59 @@ if __name__ == '__main__':
     f.close()
     '''
 
+    N = 200000
     X = []
     Y = []
     mask = []
+    print("reading data...")
     f = open("data", "r")
     read_data()
     f.close()
+    print("done.")
 
-    Xval = X[:10000]
-    Yval = Y[:10000]
-    maskval = mask[:10000]
-    Xtr = X[10000:]
-    Ytr = Y[10000:]
-    masktr = mask[10000:]
+    Nval = int(N / 10)
+    Ntr = N - Nval
+    Xval = X[:Nval]
+    Yval = Y[:Nval]
+    maskval = mask[:Nval]
+    Xtr = X[Nval:]
+    Ytr = Y[Nval:]
+    masktr = mask[Nval:]
 
     SLNetwork = CardNetwork(54 * 6, tf.train.AdamOptimizer(learning_rate=0.001), "SLNetwork")
 
-    sess = tf.train.Session()
+    sess = tf.Session()
+    saver = tf.train.Saver()
+    
 
-    for i in range(190000):
-        maski = [False for j in range(9085)]
-        for idx in masktr[i]:
-            maski[idx] = True
-        sess.run(optimize,
+    # for i in range(Nval):
+        # print(i, " : ", maskval[i][Yval[i].index(1)])
+    #   if not(Yval[i].count(1) == 1):
+    #       print("wrong ", i)
+
+
+    TRAIN = False
+    if TRAIN:
+        sess.run(tf.global_variables_initializer())
+        for i in range(Ntr):
+            maski = [False for j in range(9085)]
+            for idx in masktr[i]:
+                maski[idx] = True
+                sess.run(SLNetwork.optimize,
                 feed_dict = {
                     SLNetwork.input: np.reshape(Xtr[i], [1, -1]),
                     SLNetwork.mask: np.reshape(maski, [1, -1]),
                     SLNetwork.masked_a_dim: len(maski),
-                    SLNetwork.ground_truth_policy: Ytr[i]
+                    SLNetwork.ground_truth_policy: np.reshape(Ytr[i], [1, -1])
                 })
+            print(i)
+        saver.save(sess, "./Model/SLNetwork.ckpt")
 
+    saver.restore(sess, "./Model/SLNetwork.ckpt")
+    # sess.run(tf.global_variables_initializer())
     total = 0
     correct = 0
-    for i in range(10000):
+    for i in range(Nval):
         maski = [False for j in range(9085)]
         for idx in maskval[i]:
             maski[idx] = True
@@ -798,11 +820,11 @@ if __name__ == '__main__':
                                     SLNetwork.mask: np.reshape(maski, [1, -1])
                                 })
         valid_policy = valid_policy[0]
-        valid_actions = np.take(np.arange(9085), maski.nonzero())
+        valid_actions = np.take(np.arange(9085), np.array(maski).nonzero())
         valid_actions = valid_actions.reshape(-1)
         a = np.random.choice(valid_actions, p=valid_policy)
         total += 1
-        if (a == maskval[i][Yval[i].index(1)])
+        if a == maskval[i][Yval[i].index(1)]:
             correct += 1
 
     print("accurency = ", correct * 1.0 / total)
